@@ -1,185 +1,148 @@
-import express from "express";
-import { Bot, webhookCallback } from "grammy";
-import fs from "fs";
+const { Telegraf, Markup } = require("telegraf");
+const express = require("express");
+const fs = require("fs");
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const ADMIN_ID = String(process.env.ADMIN_ID || "");
-const PORT = Number(process.env.PORT || 10000);
-const RENDER_EXTERNAL_URL = process.env.RENDER_EXTERNAL_URL;
-const TZ = "America/Sao_Paulo";
+const ADMIN_ID = process.env.ADMIN_ID;
 
-const TRIGGER_HOUR = 18;
-const TRIGGER_MINUTE = 45;
-const AUTO_MESSAGE = "Ok";
-const STATE_FILE = "./state.json";
+const bot = new Telegraf(BOT_TOKEN);
+const app = express();
+app.use(express.json());
 
-if (!BOT_TOKEN) throw new Error("BOT_TOKEN não definido");
-if (!ADMIN_ID) throw new Error("ADMIN_ID não definido");
-if (!RENDER_EXTERNAL_URL) throw new Error("RENDER_EXTERNAL_URL não definida");
+const port = process.env.PORT || 10000;
+const LEADS_FILE = "leads.json";
+const STATE_FILE = "group_state.json";
+const TRIGGER_HOUR = 20;
+const TRIGGER_MINUTE = 0;
 
-function loadState() {
-  if (!fs.existsSync(STATE_FILE)) {
-    const initialState = { targetGroupId: null, lastSentDate: null };
-    fs.writeFileSync(STATE_FILE, JSON.stringify(initialState, null, 2));
-    return initialState;
+// ================= LEADS =================
+
+function getLeads() {
+  if (!fs.existsSync(LEADS_FILE)) {
+    fs.writeFileSync(LEADS_FILE, JSON.stringify([]));
   }
+  return JSON.parse(fs.readFileSync(LEADS_FILE));
+}
+
+function saveLead(user) {
+  const leads = getLeads();
+  const exists = leads.find((l) => l.id === user.id);
+
+  if (!exists) {
+    leads.push({
+      id: user.id,
+      username: user.username || "",
+      name: user.first_name || "",
+      date: new Date().toISOString(),
+    });
+
+    fs.writeFileSync(LEADS_FILE, JSON.stringify(leads, null, 2));
+    return true;
+  }
+
+  return false;
+}
+
+async function notifyNewLead(user) {
+  if (!ADMIN_ID) return;
 
   try {
-    return JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
-  } catch {
-    const fallbackState = { targetGroupId: null, lastSentDate: null };
-    fs.writeFileSync(STATE_FILE, JSON.stringify(fallbackState, null, 2));
-    return fallbackState;
+    await bot.telegram.sendMessage(
+      ADMIN_ID,
+      `🚨 Novo lead no bot\n\nNome: ${user.first_name || "Sem nome"}\n@${
+        user.username || "sem username"
+      }\nID: ${user.id}`
+    );
+  } catch (error) {
+    console.log("Erro ao avisar admin:", error.message);
   }
+}
+
+// ================= ESTADO =================
+
+function getState() {
+  if (!fs.existsSync(STATE_FILE)) {
+    fs.writeFileSync(
+      STATE_FILE,
+      JSON.stringify({ lastSentDate: null }, null, 2)
+    );
+  }
+  return JSON.parse(fs.readFileSync(STATE_FILE));
 }
 
 function saveState(state) {
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
 }
 
-function getNowParts() {
+function isAfterTime() {
   const now = new Date();
-  const formatter = new Intl.DateTimeFormat("sv-SE", {
-    timeZone: TZ,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
+  const h = now.getHours();
+  const m = now.getMinutes();
 
-  const parts = formatter.formatToParts(now);
-  const map = {};
-  for (const part of parts) {
-    if (part.type !== "literal") map[part.type] = part.value;
-  }
+  if (h > TRIGGER_HOUR) return true;
+  if (h === TRIGGER_HOUR && m >= TRIGGER_MINUTE) return true;
 
-  return {
-    date: `${map.year}-${map.month}-${map.day}`,
-    hour: Number(map.hour),
-    minute: Number(map.minute),
-    second: Number(map.second),
-  };
-}
-
-function isAfterTrigger() {
-  const now = getNowParts();
-  if (now.hour > TRIGGER_HOUR) return true;
-  if (now.hour === TRIGGER_HOUR && now.minute >= TRIGGER_MINUTE) return true;
   return false;
 }
 
-function isAdmin(ctx) {
-  return String(ctx.from?.id || "") === ADMIN_ID;
+function getToday() {
+  return new Date().toISOString().split("T")[0];
 }
 
-const app = express();
-const bot = new Bot(BOT_TOKEN);
+// ================= START =================
 
-bot.command("start", async (ctx) => {
-  try {
-    const nome = ctx.from?.first_name || "Sem nome";
-    const username = ctx.from?.username ? `@${ctx.from.username}` : "@sem_username";
-    const id = ctx.from?.id || "sem_id";
+bot.start(async (ctx) => {
+  const isNewLead = saveLead(ctx.from);
 
-    await bot.api.sendMessage(
-      ADMIN_ID,
-      `🚨 Novo lead no bot\n\nNome: ${nome}\n${username}\nID: ${id}`
-    );
-  } catch (error) {
-    console.log("Erro ao avisar admin:", error.message);
+  if (isNewLead) {
+    await notifyNewLead(ctx.from);
   }
 
   await ctx.reply("Olá! Em breve te respondo 😊");
 });
 
-bot.command("setgroup", async (ctx) => {
-  if (!isAdmin(ctx)) return;
+// ================= GRUPO =================
 
-  if (ctx.chat.type === "private") {
-    await ctx.reply("Use /setgroup dentro do grupo que você quer monitorar.");
-    return;
-  }
-
-  const state = loadState();
-  state.targetGroupId = String(ctx.chat.id);
-  saveState(state);
-
-  await ctx.reply(
-    `✅ Grupo configurado.\n\nGrupo ID: ${ctx.chat.id}\nGatilho: ${String(TRIGGER_HOUR).padStart(2, "0")}:${String(TRIGGER_MINUTE).padStart(2, "0")}\nMensagem: ${AUTO_MESSAGE}`
-  );
-});
-
-bot.command("resetday", async (ctx) => {
-  if (!isAdmin(ctx)) return;
-
-  const state = loadState();
-  state.lastSentDate = null;
-  saveState(state);
-
-  await ctx.reply("♻️ Reset feito. Pode testar novamente.");
-});
-
-bot.command("status", async (ctx) => {
-  if (!isAdmin(ctx)) return;
-
-  const state = loadState();
-  const now = getNowParts();
-
-  await ctx.reply(
-    `📊 Status\n\nGrupo configurado: ${state.targetGroupId || "nenhum"}\nÚltimo envio: ${state.lastSentDate || "nenhum"}\nData atual: ${now.date}\nHora atual: ${String(now.hour).padStart(2, "0")}:${String(now.minute).padStart(2, "0")}:${String(now.second).padStart(2, "0")}`
-  );
-});
-
-bot.on("message", async (ctx) => {
+bot.on("message", async (ctx, next) => {
   try {
-    if (ctx.chat.type === "private") return;
-    if (!ctx.from || ctx.from.is_bot) return;
-
-    const state = loadState();
-    const chatId = String(ctx.chat.id);
-    const now = getNowParts();
-
-    if (!state.targetGroupId) return;
-    if (chatId !== state.targetGroupId) return;
-    if (!isAfterTrigger()) return;
-    if (state.lastSentDate === now.date) return;
+    if (ctx.chat.type === "private") return next();
+    if (!ctx.from || ctx.from.is_bot) return next();
 
     const text = ctx.message?.text || "";
-    if (text.startsWith("/")) return;
+    if (text.startsWith("/")) return next();
 
-    await ctx.reply(AUTO_MESSAGE);
+    const state = getState();
 
-    state.lastSentDate = now.date;
+    if (!isAfterTime()) return next();
+    if (state.lastSentDate === getToday()) return next();
+
+    await ctx.reply("Ok");
+
+    state.lastSentDate = getToday();
     saveState(state);
 
-    console.log(`Mensagem automática enviada no grupo ${chatId} em ${now.date}`);
-  } catch (error) {
-    console.log("Erro na lógica do grupo:", error.message);
+    console.log("✅ Mensagem enviada no grupo");
+  } catch (err) {
+    console.log("Erro:", err.message);
   }
+
+  return next();
 });
 
-bot.catch((err) => {
-  console.error("Erro do bot:", err.error);
+// ================= SERVIDOR =================
+
+app.get("/", (req, res) => {
+  res.send("Bot online");
 });
 
-app.get("/", (_req, res) => {
-  res.send("Bot online 🚀");
-});
-
-app.use(`/webhook/${BOT_TOKEN}`, webhookCallback(bot, "express"));
-
-app.listen(PORT, async () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
+app.listen(port, async () => {
+  console.log(`Servidor rodando na porta ${port}`);
 
   try {
-    const webhookUrl = `${RENDER_EXTERNAL_URL}/webhook/${BOT_TOKEN}`;
-    await bot.api.deleteWebhook({ drop_pending_updates: true });
-    await bot.api.setWebhook(webhookUrl);
-    console.log(`Webhook configurado: ${webhookUrl}`);
-  } catch (error) {
-    console.log("Erro ao configurar webhook:", error.message);
+    await bot.telegram.deleteWebhook();
+    await bot.launch();
+    console.log("🤖 Bot rodando com polling");
+  } catch (e) {
+    console.log("Erro ao iniciar bot:", e.message);
   }
 });

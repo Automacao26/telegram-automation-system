@@ -1,6 +1,6 @@
-const { Telegraf, Markup } = require("telegraf");
-const express = require("express");
-const fs = require("fs");
+import { Telegraf, Markup } from "telegraf";
+import express from "express";
+import fs from "fs";
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_ID = process.env.ADMIN_ID;
@@ -131,7 +131,7 @@ bot.on("message", async (ctx, next) => {
 
 // ================= SERVIDOR =================
 
-app.get("/", (req, res) => {
+app.get("/", (_req, res) => {
   res.send("Bot online");
 });
 

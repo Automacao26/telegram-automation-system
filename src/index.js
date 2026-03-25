@@ -19,10 +19,7 @@ if (!RENDER_EXTERNAL_URL) throw new Error("RENDER_EXTERNAL_URL não definida");
 
 function loadState() {
   if (!fs.existsSync(STATE_FILE)) {
-    const initialState = {
-      targetGroupId: null,
-      lastSentDate: null
-    };
+    const initialState = { targetGroupId: null, lastSentDate: null };
     fs.writeFileSync(STATE_FILE, JSON.stringify(initialState, null, 2));
     return initialState;
   }
@@ -30,10 +27,7 @@ function loadState() {
   try {
     return JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
   } catch {
-    const fallbackState = {
-      targetGroupId: null,
-      lastSentDate: null
-    };
+    const fallbackState = { targetGroupId: null, lastSentDate: null };
     fs.writeFileSync(STATE_FILE, JSON.stringify(fallbackState, null, 2));
     return fallbackState;
   }
@@ -45,7 +39,6 @@ function saveState(state) {
 
 function getNowParts() {
   const now = new Date();
-
   const formatter = new Intl.DateTimeFormat("sv-SE", {
     timeZone: TZ,
     year: "numeric",
@@ -54,29 +47,25 @@ function getNowParts() {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-    hour12: false
+    hour12: false,
   });
 
   const parts = formatter.formatToParts(now);
   const map = {};
-
   for (const part of parts) {
-    if (part.type !== "literal") {
-      map[part.type] = part.value;
-    }
+    if (part.type !== "literal") map[part.type] = part.value;
   }
 
   return {
     date: `${map.year}-${map.month}-${map.day}`,
     hour: Number(map.hour),
     minute: Number(map.minute),
-    second: Number(map.second)
+    second: Number(map.second),
   };
 }
 
 function isAfterTrigger() {
   const now = getNowParts();
-
   if (now.hour > TRIGGER_HOUR) return true;
   if (now.hour === TRIGGER_HOUR && now.minute >= TRIGGER_MINUTE) return true;
   return false;
@@ -187,6 +176,7 @@ app.listen(PORT, async () => {
 
   try {
     const webhookUrl = `${RENDER_EXTERNAL_URL}/webhook/${BOT_TOKEN}`;
+    await bot.api.deleteWebhook({ drop_pending_updates: true });
     await bot.api.setWebhook(webhookUrl);
     console.log(`Webhook configurado: ${webhookUrl}`);
   } catch (error) {

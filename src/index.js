@@ -22,7 +22,7 @@ Aqui vão as instruções:
 
 Qualquer dúvida, chama no privado.`;
 
-// lead no privado
+// Lead no privado
 bot.command("start", async (ctx) => {
   const nome = ctx.from.first_name || "Sem nome";
   const username = ctx.from.username ? `@${ctx.from.username}` : "@sem_username";
@@ -40,42 +40,51 @@ bot.command("start", async (ctx) => {
   await ctx.reply("Olá! Em breve te respondo 😊");
 });
 
-// quando alguém entra no grupo
-bot.on("message", async (ctx, next) => {
+// Entrada de membro no grupo
+bot.on("chat_member", async (ctx) => {
   try {
-    const msg = ctx.message;
+    const oldStatus = ctx.chatMember.old_chat_member.status;
+    const newStatus = ctx.chatMember.new_chat_member.status;
 
-    if (msg?.new_chat_members && msg.new_chat_members.length > 0) {
-      console.log("Novo membro entrou no grupo:", msg.new_chat_members);
+    console.log("chat_member update recebido:", {
+      chatId: ctx.chat.id,
+      oldStatus,
+      newStatus,
+      userId: ctx.chatMember.new_chat_member.user.id,
+    });
 
-      await ctx.reply(AUTO_MESSAGE);
-      return;
-    }
+    const entrouAgora =
+      (oldStatus === "left" || oldStatus === "kicked") &&
+      (newStatus === "member" ||
+        newStatus === "administrator" ||
+        newStatus === "restricted");
+
+    if (!entrouAgora) return;
+
+    await ctx.api.sendMessage(ctx.chat.id, AUTO_MESSAGE);
+    console.log("Mensagem automática enviada no grupo:", ctx.chat.id);
   } catch (error) {
     console.log("Erro ao processar entrada no grupo:", error.message);
   }
-
-  await next();
 });
 
-// rota do render
+// Só pra verificar se o bot está vivo
 app.get("/", (_req, res) => {
   res.send("Bot online 🚀");
 });
 
-// tratamento básico de erro
 bot.catch((err) => {
   console.error("Erro do bot:", err.error);
 });
 
-// inicia bot
+// Inicia bot com allowed_updates explícitos
 bot.start({
+  allowed_updates: ["message", "chat_member", "my_chat_member"],
   onStart: () => {
     console.log("Bot iniciado com polling");
   },
 });
 
-// inicia servidor
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 });

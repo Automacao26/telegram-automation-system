@@ -5,13 +5,18 @@ const app = express();
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_ID = process.env.ADMIN_ID;
-const PORT = process.env.PORT || 3000;
 
-if (!BOT_TOKEN) throw new Error("BOT_TOKEN não definido");
-if (!ADMIN_ID) throw new Error("ADMIN_ID não definido");
+if (!BOT_TOKEN) {
+  throw new Error("BOT_TOKEN não definido");
+}
+
+if (!ADMIN_ID) {
+  throw new Error("ADMIN_ID não definido");
+}
 
 const bot = new Bot(BOT_TOKEN);
 
+// Mensagem que vai no grupo quando entrar alguém
 const AUTO_MESSAGE = `🚀 Bem-vindo(a) ao grupo!
 
 Aqui vão as instruções:
@@ -22,69 +27,44 @@ Aqui vão as instruções:
 
 Qualquer dúvida, chama no privado.`;
 
-// Lead no privado
+// /start no privado
 bot.command("start", async (ctx) => {
-  const nome = ctx.from.first_name || "Sem nome";
-  const username = ctx.from.username ? `@${ctx.from.username}` : "@sem_username";
-  const id = ctx.from.id;
+  const user = ctx.from;
+
+  const nome = user.first_name || "Sem nome";
+  const username = user.username ? `@${user.username}` : "@sem_username";
+  const id = user.id;
 
   try {
     await bot.api.sendMessage(
       ADMIN_ID,
       `🚨 Novo lead no bot\n\nNome: ${nome}\n${username}\nID: ${id}`
     );
-  } catch (error) {
-    console.log("Erro ao avisar admin:", error.message);
+  } catch (e) {
+    console.log("Erro ao enviar lead:", e.message);
   }
 
   await ctx.reply("Olá! Em breve te respondo 😊");
 });
 
-// Entrada de membro no grupo
-bot.on("chat_member", async (ctx) => {
+// Quando novos membros entram no grupo
+bot.on("message:new_chat_members", async (ctx) => {
   try {
-    const oldStatus = ctx.chatMember.old_chat_member.status;
-    const newStatus = ctx.chatMember.new_chat_member.status;
-
-    console.log("chat_member update recebido:", {
-      chatId: ctx.chat.id,
-      oldStatus,
-      newStatus,
-      userId: ctx.chatMember.new_chat_member.user.id,
-    });
-
-    const entrouAgora =
-      (oldStatus === "left" || oldStatus === "kicked") &&
-      (newStatus === "member" ||
-        newStatus === "administrator" ||
-        newStatus === "restricted");
-
-    if (!entrouAgora) return;
-
-    await ctx.api.sendMessage(ctx.chat.id, AUTO_MESSAGE);
-    console.log("Mensagem automática enviada no grupo:", ctx.chat.id);
+    await ctx.reply(AUTO_MESSAGE);
   } catch (error) {
-    console.log("Erro ao processar entrada no grupo:", error.message);
+    console.log("Erro ao enviar mensagem no grupo:", error.message);
   }
 });
 
-// Só pra verificar se o bot está vivo
+// rota pro Render
 app.get("/", (_req, res) => {
   res.send("Bot online 🚀");
 });
 
-bot.catch((err) => {
-  console.error("Erro do bot:", err.error);
-});
+// inicia bot
+bot.start();
 
-// Inicia bot com allowed_updates explícitos
-bot.start({
-  allowed_updates: ["message", "chat_member", "my_chat_member"],
-  onStart: () => {
-    console.log("Bot iniciado com polling");
-  },
-});
-
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
+  console.log("Servidor rodando...");
 });

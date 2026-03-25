@@ -5,18 +5,13 @@ const app = express();
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_ID = process.env.ADMIN_ID;
+const PORT = process.env.PORT || 3000;
 
-if (!BOT_TOKEN) {
-  throw new Error("BOT_TOKEN não definido");
-}
-
-if (!ADMIN_ID) {
-  throw new Error("ADMIN_ID não definido");
-}
+if (!BOT_TOKEN) throw new Error("BOT_TOKEN não definido");
+if (!ADMIN_ID) throw new Error("ADMIN_ID não definido");
 
 const bot = new Bot(BOT_TOKEN);
 
-// Mensagem que vai no grupo quando entrar alguém
 const AUTO_MESSAGE = `🚀 Bem-vindo(a) ao grupo!
 
 Aqui vão as instruções:
@@ -27,44 +22,60 @@ Aqui vão as instruções:
 
 Qualquer dúvida, chama no privado.`;
 
-// /start no privado
+// lead no privado
 bot.command("start", async (ctx) => {
-  const user = ctx.from;
-
-  const nome = user.first_name || "Sem nome";
-  const username = user.username ? `@${user.username}` : "@sem_username";
-  const id = user.id;
+  const nome = ctx.from.first_name || "Sem nome";
+  const username = ctx.from.username ? `@${ctx.from.username}` : "@sem_username";
+  const id = ctx.from.id;
 
   try {
     await bot.api.sendMessage(
       ADMIN_ID,
       `🚨 Novo lead no bot\n\nNome: ${nome}\n${username}\nID: ${id}`
     );
-  } catch (e) {
-    console.log("Erro ao enviar lead:", e.message);
+  } catch (error) {
+    console.log("Erro ao avisar admin:", error.message);
   }
 
   await ctx.reply("Olá! Em breve te respondo 😊");
 });
 
-// Quando novos membros entram no grupo
-bot.on("message:new_chat_members", async (ctx) => {
+// quando alguém entra no grupo
+bot.on("message", async (ctx, next) => {
   try {
-    await ctx.reply(AUTO_MESSAGE);
+    const msg = ctx.message;
+
+    if (msg?.new_chat_members && msg.new_chat_members.length > 0) {
+      console.log("Novo membro entrou no grupo:", msg.new_chat_members);
+
+      await ctx.reply(AUTO_MESSAGE);
+      return;
+    }
   } catch (error) {
-    console.log("Erro ao enviar mensagem no grupo:", error.message);
+    console.log("Erro ao processar entrada no grupo:", error.message);
   }
+
+  await next();
 });
 
-// rota pro Render
+// rota do render
 app.get("/", (_req, res) => {
   res.send("Bot online 🚀");
 });
 
-// inicia bot
-bot.start();
+// tratamento básico de erro
+bot.catch((err) => {
+  console.error("Erro do bot:", err.error);
+});
 
-const PORT = process.env.PORT || 3000;
+// inicia bot
+bot.start({
+  onStart: () => {
+    console.log("Bot iniciado com polling");
+  },
+});
+
+// inicia servidor
 app.listen(PORT, () => {
-  console.log("Servidor rodando...");
+  console.log(`Servidor rodando na porta ${PORT}`);
 });

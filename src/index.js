@@ -13,7 +13,7 @@ const port = process.env.PORT || 10000;
 const LEADS_FILE = "leads.json";
 const STATE_FILE = "group_state.json";
 const TRIGGER_HOUR = 18;
-const TRIGGER_MINUTE = 40;
+const TRIGGER_MINUTE = 50;
 
 // ================= LEADS =================
 

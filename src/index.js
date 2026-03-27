@@ -17,6 +17,7 @@ const LEADS_FILE = "leads.json";
 const STATE_FILE = "group_state.json";
 const TRIGGER_HOUR = 20;
 const TRIGGER_MINUTE = 0;
+const TZ = "America/Sao_Paulo";
 
 // ================= LEADS =================
 
@@ -24,7 +25,7 @@ function getLeads() {
   if (!fs.existsSync(LEADS_FILE)) {
     fs.writeFileSync(LEADS_FILE, JSON.stringify([]));
   }
-  return JSON.parse(fs.readFileSync(LEADS_FILE));
+  return JSON.parse(fs.readFileSync(LEADS_FILE, "utf8"));
 }
 
 function saveLead(user) {
@@ -70,17 +71,42 @@ function getState() {
       JSON.stringify({ lastSentDate: null }, null, 2)
     );
   }
-  return JSON.parse(fs.readFileSync(STATE_FILE));
+  return JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
 }
 
 function saveState(state) {
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
 }
 
+function getSaoPauloParts() {
+  const formatter = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  });
+
+  const parts = formatter.formatToParts(new Date());
+  const get = (type) => parts.find((p) => p.type === type)?.value || "00";
+
+  return {
+    year: get("year"),
+    month: get("month"),
+    day: get("day"),
+    hour: Number(get("hour")),
+    minute: Number(get("minute")),
+    second: Number(get("second")),
+  };
+}
+
 function isAfterTime() {
-  const now = new Date();
-  const h = now.getHours();
-  const m = now.getMinutes();
+  const now = getSaoPauloParts();
+  const h = now.hour;
+  const m = now.minute;
 
   if (h > TRIGGER_HOUR) return true;
   if (h === TRIGGER_HOUR && m >= TRIGGER_MINUTE) return true;
@@ -89,7 +115,8 @@ function isAfterTime() {
 }
 
 function getToday() {
-  return new Date().toISOString().split("T")[0];
+  const now = getSaoPauloParts();
+  return `${now.year}-${now.month}-${now.day}`;
 }
 
 // ================= BOT =================
@@ -104,15 +131,28 @@ bot.start(async (ctx) => {
   await ctx.reply("Olá! Em breve te respondo 😊");
 });
 
+bot.command("teste", async (ctx) => {
+  await ctx.reply("teste ok");
+});
+
 bot.on("message", async (ctx, next) => {
   try {
-    if (ctx.chat.type === "private") return next();
+    console.log("Mensagem recebida");
+    console.log("chat.type:", ctx.chat?.type);
+    console.log("chat.id:", ctx.chat?.id);
+    console.log("texto:", ctx.message?.text || "[sem texto]");
+
+    if (ctx.chat?.type === "private") return next();
     if (!ctx.from || ctx.from.is_bot) return next();
 
     const text = ctx.message?.text || "";
     if (text.startsWith("/")) return next();
 
     const state = getState();
+
+    console.log("Horário SP após 20h?", isAfterTime());
+    console.log("Última data enviada:", state.lastSentDate);
+    console.log("Hoje:", getToday());
 
     if (!isAfterTime()) return next();
     if (state.lastSentDate === getToday()) return next();
@@ -130,7 +170,7 @@ bot.on("message", async (ctx, next) => {
   return next();
 });
 
-// ================= SERVIDOR =================
+// ================= SERVIDOR / WEBHOOK =================
 
 app.use(express.json());
 

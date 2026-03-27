@@ -1,13 +1,16 @@
-import { Telegraf, Markup } from "telegraf";
+import { Telegraf } from "telegraf";
 import express from "express";
 import fs from "fs";
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_ID = process.env.ADMIN_ID;
 
+if (!BOT_TOKEN) {
+  throw new Error("BOT_TOKEN não definido nas variáveis de ambiente");
+}
+
 const bot = new Telegraf(BOT_TOKEN);
 const app = express();
-app.use(express.json());
 
 const port = process.env.PORT || 10000;
 const LEADS_FILE = "leads.json";
@@ -89,7 +92,7 @@ function getToday() {
   return new Date().toISOString().split("T")[0];
 }
 
-// ================= START =================
+// ================= BOT =================
 
 bot.start(async (ctx) => {
   const isNewLead = saveLead(ctx.from);
@@ -100,8 +103,6 @@ bot.start(async (ctx) => {
 
   await ctx.reply("Olá! Em breve te respondo 😊");
 });
-
-// ================= GRUPO =================
 
 bot.on("message", async (ctx, next) => {
   try {
@@ -131,33 +132,39 @@ bot.on("message", async (ctx, next) => {
 
 // ================= SERVIDOR =================
 
-app.get("/", (_req, res) => {
-  res.send("Bot online");
-});
-
-const RENDER_EXTERNAL_URL = process.env.RENDER_EXTERNAL_URL;
-
-app.get("/", (_req, res) => {
-  res.send("Bot online");
-});
-
 app.use(express.json());
 
-app.post(`/webhook/${BOT_TOKEN}`, (req, res) => {
-  bot.handleUpdate(req.body, res);
+app.get("/", (_req, res) => {
+  res.send("Bot online");
+});
+
+const WEBHOOK_PATH = `/webhook/${BOT_TOKEN}`;
+
+app.post(WEBHOOK_PATH, async (req, res) => {
+  try {
+    await bot.handleUpdate(req.body);
+    res.sendStatus(200);
+  } catch (error) {
+    console.log("Erro no webhook:", error.message);
+    res.sendStatus(500);
+  }
 });
 
 app.listen(port, async () => {
   console.log(`Servidor rodando na porta ${port}`);
 
   try {
-    await bot.telegram.deleteWebhook({ drop_pending_updates: true });
+    const renderUrl = process.env.RENDER_EXTERNAL_URL;
 
-    const webhookUrl = `${RENDER_EXTERNAL_URL}/webhook/${BOT_TOKEN}`;
-    await bot.telegram.setWebhook(webhookUrl);
+    if (!renderUrl) {
+      throw new Error("RENDER_EXTERNAL_URL não definida");
+    }
 
-    console.log(`✅ Webhook configurado: ${webhookUrl}`);
+    const WEBHOOK_URL = `${renderUrl}${WEBHOOK_PATH}`;
+
+    await bot.telegram.setWebhook(WEBHOOK_URL);
+    console.log("✅ Webhook configurado:", WEBHOOK_URL);
   } catch (e) {
-    console.log("Erro ao configurar webhook:", e.message);
+    console.log("Erro ao iniciar bot:", e.message);
   }
 });

@@ -135,14 +135,29 @@ app.get("/", (_req, res) => {
   res.send("Bot online");
 });
 
+const RENDER_EXTERNAL_URL = process.env.RENDER_EXTERNAL_URL;
+
+app.get("/", (_req, res) => {
+  res.send("Bot online");
+});
+
+app.use(express.json());
+
+app.post(`/webhook/${BOT_TOKEN}`, (req, res) => {
+  bot.handleUpdate(req.body, res);
+});
+
 app.listen(port, async () => {
   console.log(`Servidor rodando na porta ${port}`);
 
   try {
-    await bot.telegram.deleteWebhook();
-    await bot.launch();
-    console.log("🤖 Bot rodando com polling");
+    await bot.telegram.deleteWebhook({ drop_pending_updates: true });
+
+    const webhookUrl = `${RENDER_EXTERNAL_URL}/webhook/${BOT_TOKEN}`;
+    await bot.telegram.setWebhook(webhookUrl);
+
+    console.log(`✅ Webhook configurado: ${webhookUrl}`);
   } catch (e) {
-    console.log("Erro ao iniciar bot:", e.message);
+    console.log("Erro ao configurar webhook:", e.message);
   }
 });
